@@ -86,21 +86,27 @@ def define_G(input_nc, output_nc, ngf, norm='batch', use_dropout=False, init_typ
 class SpectralConv(nn.Module):
     def __init__(self, in_ch, out_ch, kernel_size, stride=1, padding=0, bias=True):
         super(SpectralConv, self).__init__()
-        self.conv = spectral_norm(nn.Conv2d(in_ch, out_ch, kernel_size=kernel_size,
-                      stride=stride, padding=padding, bias=bias))
+        # self.conv = spectral_norm(nn.Conv2d(in_ch, out_ch, kernel_size=kernel_size,
+        #               stride=stride, padding=padding, bias=bias))
+        self.conv = nn.Conv2d(in_ch, out_ch, kernel_size=kernel_size,
+                       stride=stride, padding=padding, bias=bias)
+        self.norm = nn.InstanceNorm2d(out_ch)
 
     def forward(self, x):
-        return self.conv(x)
+        return self.norm(self.conv(x))
 
 
 class SpectralTransposeConv(nn.Module):
     def __init__(self, in_ch, out_ch, kernel_size, stride=1, padding=0, output_padding=0, bias=True):
         super(SpectralTransposeConv, self).__init__()
-        self.conv = spectral_norm(nn.ConvTranspose2d(in_ch, out_ch, kernel_size=kernel_size,
-                      stride=stride, padding=padding, output_padding=output_padding, bias=bias))
+        # self.conv = spectral_norm(nn.ConvTranspose2d(in_ch, out_ch, kernel_size=kernel_size,
+        #               stride=stride, padding=padding, output_padding=output_padding, bias=bias))
+        self.conv = nn.ConvTranspose2d(in_ch, out_ch, kernel_size=kernel_size,
+                       stride=stride, padding=padding, output_padding=output_padding, bias=bias)
+        self.norm = nn.InstanceNorm2d(out_ch)
 
     def forward(self, x):
-        return self.conv(x)
+        return self.norm(self.conv(x))
 
 
 # Defines the generator that consists of Resnet blocks between a few
