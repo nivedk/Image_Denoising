@@ -37,6 +37,50 @@ def get_scheduler(optimizer, opt):
     return scheduler
 
 
+class PixelwiseNorm(nn.Module):
+    def __init__(self):
+        super(PixelwiseNorm, self).__init__()
+
+    def forward(self, x, alpha=1e-8):
+        """
+        forward pass of the module
+        :param x: input activations volume
+        :param alpha: small number for numerical stability
+        :return: y => pixel normalized activations
+        """
+        y = x.pow(2.).mean(dim=1, keepdim=True).add(alpha).sqrt()  # [N1HW]
+        y = x / y  # normalize the input x volume
+        return y
+
+
+class ScaleNorm(nn.Module):
+    """ScaleNorm"""
+    def __init__(self, scale, eps=1e-5):
+        super(ScaleNorm, self).__init__()
+        self.scale = nn.Parameter(torch.tensor(scale))
+        self.eps = eps
+
+    def forward(self, x):
+        norm = self.scale / torch.norm(x, dim=1, keepdim=True).clamp(min=self.eps)
+        return x * norm
+
+class MixedNorm2d(nn.Module):
+    def __init__(self, num_features):
+        super(MixedNorm2d, self).__init__()
+        self.instance_norm = nn.InstanceNorm2d(num_features)
+        self.pixel_norm = PixelwiseNorm()
+        self.scale_norm = ScaleNorm(num_features ** 0.5)
+        self.conv = nn.Conv2d(3 * num_features, num_features, 1, 1, 0)
+    
+    def forward(self, x):
+        x_in = self.instance_norm(x)
+        x_pn = self.pixel_norm(x)
+        x_sn = self.pixel_norm(x)
+        
+        x = torch.cat([x_in, x_pn, x_sn], dim=1)
+        return self.conv(x)
+
+
 # update learning rate (called once every epoch)
 def update_learning_rate(scheduler, optimizer):
     scheduler.step()
@@ -86,27 +130,21 @@ def define_G(input_nc, output_nc, ngf, norm='batch', use_dropout=False, init_typ
 class SpectralConv(nn.Module):
     def __init__(self, in_ch, out_ch, kernel_size, stride=1, padding=0, bias=True):
         super(SpectralConv, self).__init__()
-        # self.conv = spectral_norm(nn.Conv2d(in_ch, out_ch, kernel_size=kernel_size,
-        #               stride=stride, padding=padding, bias=bias))
-        self.conv = nn.Conv2d(in_ch, out_ch, kernel_size=kernel_size,
-                       stride=stride, padding=padding, bias=bias)
-        self.norm = nn.InstanceNorm2d(out_ch)
+        self.conv = spectral_norm(nn.Conv2d(in_ch, out_ch, kernel_size=kernel_size,
+                      stride=stride, padding=padding, bias=bias))
 
     def forward(self, x):
-        return self.norm(self.conv(x))
+        return self.conv(x)
 
 
 class SpectralTransposeConv(nn.Module):
     def __init__(self, in_ch, out_ch, kernel_size, stride=1, padding=0, output_padding=0, bias=True):
         super(SpectralTransposeConv, self).__init__()
-        # self.conv = spectral_norm(nn.ConvTranspose2d(in_ch, out_ch, kernel_size=kernel_size,
-        #               stride=stride, padding=padding, output_padding=output_padding, bias=bias))
-        self.conv = nn.ConvTranspose2d(in_ch, out_ch, kernel_size=kernel_size,
-                       stride=stride, padding=padding, output_padding=output_padding, bias=bias)
-        self.norm = nn.InstanceNorm2d(out_ch)
+        self.conv = spectral_norm(nn.ConvTranspose2d(in_ch, out_ch, kernel_size=kernel_size,
+                      stride=stride, padding=padding, output_padding=output_padding, bias=bias))
 
     def forward(self, x):
-        return self.norm(self.conv(x))
+        return self.conv(x)
 
 
 # Defines the generator that consists of Resnet blocks between a few
@@ -171,6 +209,7 @@ class Inconv(nn.Module):
             nn.ReflectionPad2d(3),
             SpectralConv(in_ch, out_ch, kernel_size=7, padding=0,
                       bias=use_bias),
+            MixedNorm2d(out_ch),
             nn.LeakyReLU(0.2, inplace=True)
         )
 
@@ -185,6 +224,7 @@ class Down(nn.Module):
         self.down = nn.Sequential(
             SpectralConv(in_ch, out_ch, kernel_size=3,
                       stride=2, padding=1, bias=use_bias),
+            MixedNorm2d(out_ch),
             nn.LeakyReLU(0.2, inplace=True)
         )
 
@@ -246,6 +286,7 @@ class Up(nn.Module):
                                kernel_size=3, stride=2,
                                padding=1, output_padding=1,
                                bias=use_bias),
+            MixedNorm2d(out_ch),
             nn.LeakyReLU(0.2, inplace=True)
         )
 

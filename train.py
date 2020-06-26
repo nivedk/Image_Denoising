@@ -79,7 +79,7 @@ train_log_writer.writerow(['epoch', 'iteration', 'd_loss', 'g_loss'])
 test_log_writer = csv.writer(open(opt.testlogcsv, 'w'))
 test_log_writer.writerow(['epoch', 'avg_psnr', 'avg_ssim'])
 
-
+best_ssim = 0.0
 for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
     # train
     net_d.train()
@@ -159,19 +159,20 @@ for epoch in range(opt.epoch_count, opt.niter + opt.niter_decay + 1):
             avg_ssim += ssim
 
         avg_psnr = avg_psnr / len(testing_data_loader)
-        avg_ssim = avg_ssim / len(testing_data_loader)
+        avg_ssim = (avg_ssim / len(testing_data_loader)).item()
         print("===> Avg. PSNR: {:.4f} dB, Avg. SSIM: {:.4f}".format(avg_psnr, avg_ssim))
 
         test_log_writer.writerow([epoch, avg_psnr, avg_ssim])
 
     #checkpoint
-    if epoch % 5 == 0:
+    if avg_ssim >= best_ssim:
+        best_ssim = avg_ssim
         if not os.path.exists("checkpoint"):
             os.mkdir("checkpoint")
         if not os.path.exists(os.path.join("checkpoint", opt.dataset)):
             os.mkdir(os.path.join("checkpoint", opt.dataset))
-        net_g_model_out_path = "checkpoint/{}/netG_model_epoch_{}.pth".format(opt.dataset, epoch)
-        net_d_model_out_path = "checkpoint/{}/netD_model_epoch_{}.pth".format(opt.dataset, epoch)
+        net_g_model_out_path = "checkpoint/{}/netG_model_epoch_{}_ssim_{:.4f}.pth".format(opt.dataset, epoch, best_ssim)
+        net_d_model_out_path = "checkpoint/{}/netD_model_epoch_{}_ssim_{:.4f}.pth".format(opt.dataset, epoch, best_ssim)
         torch.save(net_g, net_g_model_out_path)
         torch.save(net_d, net_d_model_out_path)
         print("Checkpoint saved to {}".format("checkpoint" + opt.dataset))
